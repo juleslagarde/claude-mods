@@ -1,0 +1,5 @@
+{
+  "name": "jules-mods",
+  "owner": { "name": "Jules Lagarde" },
+  "plugins": [{ "name": "usage-status", "source": "./usage-status" }]
+}

@@ -1,0 +1,1 @@
+{ "name": "usage-status", "version": "0.3.0", "description": "Shows the 5h and weekly Claude usage windows as progress bars, and this session's share, above the prompt", "types": "./types/index.d.ts" }
