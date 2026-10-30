@@ -1,1 +1,45 @@
-{ "name": "usage-status", "version": "0.6.0", "description": "Shows the 5h and weekly Claude usage windows as progress bars, and their hourly rate, above the prompt", "types": "./types/index.d.ts" }
+{
+  "name": "usage-status",
+  "version": "0.7.0",
+  "description": "Shows the 5h and weekly Claude usage windows as progress bars, and their hourly rate, above the prompt",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "barColors": {
+      "type": "string",
+      "title": "Bar colours",
+      "description": "Stops as percent-used:colour, comma separated. A colour is a theme key (success, warning, error, claude, permission, suggestion...), a name (green, orange, violet...) or hex (#ff8800).",
+      "default": "0:success, 75:warning, 90:error"
+    },
+    "rateColors": {
+      "type": "string",
+      "title": "Hourly rate colours",
+      "description": "Stops as percent-of-optimal-pace:colour, comma separated. 100 is the steady rate that uses exactly what is left by the window's reset.",
+      "default": "0:green, 100:orange, 200:red, 300:violet"
+    },
+    "blend": {
+      "type": "boolean",
+      "title": "Blend between stops",
+      "description": "Mix the colours of two neighbouring stops instead of switching at each one. Works between names and hex colours, not theme keys.",
+      "default": false
+    },
+    "barCells": {
+      "type": "number",
+      "title": "Bar width",
+      "description": "Number of cells in each progress bar (4 to 40).",
+      "default": 10
+    },
+    "barChars": {
+      "type": "string",
+      "title": "Bar characters",
+      "description": "Used and remaining cell characters.",
+      "default": "█░",
+      "options": ["█░", "■□", "●○", "▰▱", "*."]
+    },
+    "rateMinMinutes": {
+      "type": "number",
+      "title": "Rate delay",
+      "description": "Minutes of readings the session needs before the hourly rate shows.",
+      "default": 15
+    }
+  }
+}
