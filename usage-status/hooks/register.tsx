@@ -7,6 +7,7 @@ const limitsAtom = atom({ plugin: 'usage-status', key: 'limits' } as const, [])
 const sharesAtom = atom({ plugin: 'usage-status', key: 'shares' } as const, {})
 
 const LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'week' }
+const ACCENTS: Record<string, string> = { five_hour: 'claude', seven_day: 'permission' }
 const BAR_CELLS = 10
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -15,9 +16,9 @@ function formatReset(iso: string | undefined, withDay: boolean): string {
   if (!iso) return ''
   const d = new Date(iso)
   const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  if (!withDay) return ` ↻${time}`
+  if (!withDay) return ` ⟳ ${time}`
   const day = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d.getDay()]
-  return ` ↻${day} ${time}`
+  return ` ⟳ ${day} ${time}`
 }
 
 // The first reading is the session's baseline; when a window resets, what the
@@ -42,7 +43,7 @@ function nextShares(
 
 const sessionPoints = (s: WindowShare) => Math.max(0, s.accrued + s.last - s.base)
 
-const levelColor = (pct: number) => (pct >= 90 ? 'error' : pct >= 75 ? 'warning' : undefined)
+const levelColor = (pct: number) => (pct >= 90 ? 'error' : pct >= 75 ? 'warning' : 'success')
 
 async function record($: EngineInterface, limits: SessionRateLimit[]) {
   if (!limits.length) return
@@ -87,14 +88,14 @@ export const register: Register = on => {
           const color = levelColor(l.percentUsed)
           return (
             <Text key={l.kind}>
-              {i > 0 ? <Text dimColor> · </Text> : ''}
-              <Text dimColor>{LABELS[l.kind]} (</Text>
-              <Text color={color}>{'*'.repeat(filled)}</Text>
+              {i > 0 ? <Text dimColor>  │  </Text> : ''}
+              <Text color={ACCENTS[l.kind]} bold>{LABELS[l.kind]} </Text>
+              <Text dimColor>▕</Text>
+              <Text color={color}>{'█'.repeat(filled)}</Text>
               <Text color={color} bold>{Math.round(l.percentUsed)}%</Text>
-              <Text dimColor>{'.'.repeat(BAR_CELLS - filled)})</Text>
-              <Text dimColor>
-                {' '}session +{mine.toFixed(1)}{formatReset(l.resetsAt, l.kind === 'seven_day')}
-              </Text>
+              <Text dimColor>{'░'.repeat(BAR_CELLS - filled)}▏</Text>
+              <Text color="suggestion"> ◆ +{mine.toFixed(1)}</Text>
+              <Text dimColor>{formatReset(l.resetsAt, l.kind === 'seven_day')}</Text>
             </Text>
           )
         })}
