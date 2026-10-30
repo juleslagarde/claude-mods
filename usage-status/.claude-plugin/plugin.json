@@ -1,1 +1,1 @@
-{ "name": "usage-status", "version": "0.5.0", "description": "Shows the 5h and weekly Claude usage windows as progress bars, and their hourly rate, above the prompt", "types": "./types/index.d.ts" }
+{ "name": "usage-status", "version": "0.6.0", "description": "Shows the 5h and weekly Claude usage windows as progress bars, and their hourly rate, above the prompt", "types": "./types/index.d.ts" }
