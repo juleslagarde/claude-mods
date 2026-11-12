@@ -1,0 +1,26 @@
+{
+  "name": "message-queue",
+  "version": "0.3.3",
+  "description": "Keep messages in a to-do style queue and choose when each one is sent to Claude",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "autoSend": {
+      "type": "boolean",
+      "title": "Auto-send",
+      "description": "When Claude finishes answering, send the next queued message by itself. Off: nothing is sent until you send it.",
+      "default": false
+    },
+    "captureWaitSubmit": {
+      "type": "boolean",
+      "title": "Queue on ctrl+x enter",
+      "description": "ctrl+x enter (the wait-your-turn submit) puts the draft in the queue instead of sending it.",
+      "default": true
+    },
+    "showBand": {
+      "type": "boolean",
+      "title": "Show count above the prompt",
+      "description": "A line above the prompt with the number of queued messages and the next one, while the queue is not empty.",
+      "default": true
+    }
+  }
+}

@@ -1,5 +1,8 @@
 {
   "name": "jules-mods",
   "owner": { "name": "Jules Lagarde" },
-  "plugins": [{ "name": "usage-status", "source": "./usage-status" }]
+  "plugins": [
+    { "name": "usage-status", "source": "./usage-status" },
+    { "name": "message-queue", "source": "./message-queue" }
+  ]
 }
