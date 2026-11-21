@@ -148,7 +148,7 @@ function paceRatio(rate: number, l: SessionRateLimit, now: number): number | nul
 // (e.g. how many weekly points one full 5h window costs). $.fs has no append,
 // so the file is rewritten whole; concurrent sessions may rarely drop a line.
 let lastLogged = ''
-async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: number) {
+async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: number, event: string) {
   try {
     const key = limits.map(l => `${l.kind}:${l.percentUsed}`).join('|')
     if (key === lastLogged) return
@@ -159,6 +159,7 @@ async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: 
     const old = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
     const row = JSON.stringify({
       t: new Date(now).toISOString(),
+      event,
       limits: limits.map(l => ({ kind: l.kind, pct: l.percentUsed, resetsAt: l.resetsAt })),
     })
     await $.fs.write(path, `${old}${row}\n`)
@@ -167,10 +168,10 @@ async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: 
   }
 }
 
-async function record($: EngineInterface, limits: SessionRateLimit[]) {
+async function record($: EngineInterface, limits: SessionRateLimit[], event: string) {
   if (!limits.length) return
   const now = await $.clock.now()
-  await logReadings($, limits, now)
+  await logReadings($, limits, now, event)
   await update($, limitsAtom, () => limits)
   await update($, historyAtom, history => nextHistory(history, limits, now))
 }
@@ -181,12 +182,12 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const ran = await next(e)
     $.ui.status(undefined)
-    await record($, (await $.session.usage()).rateLimits)
+    await record($, (await $.session.usage()).rateLimits, 'session.start')
     return ran
   })
 
   on('session.measure', async ($, e, next) => {
-    await record($, e.rateLimits)
+    await record($, e.rateLimits, 'session.measure')
     return next(e)
   })
 
