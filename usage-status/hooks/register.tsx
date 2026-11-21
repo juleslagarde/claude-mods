@@ -156,7 +156,7 @@ async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: 
     lastLogged = key
     const home = (await $.env.get('HOME')) ?? ''
     if (!home) return
-    const session = (await $.env.get('CLAUDE_CODE_SESSION_ID')) ?? 'unknown'
+    const session = await $.session.id()
     const path = `${home}/.claude/usage-log/${session}.jsonl`
     const old = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
     const row = JSON.stringify({
