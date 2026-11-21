@@ -152,16 +152,12 @@ function paceRatio(rate: number, l: SessionRateLimit, now: number): number | nul
   return optimal > 0 ? (rate / optimal) * 100 : Number.POSITIVE_INFINITY
 }
 
-// Log of every change in a window's percent, for offline analysis (e.g. how
+// Log of every reading (one per API call), for offline analysis (e.g. how
 // many weekly points one full 5h window costs). $.fs has no append, so a file
 // is rewritten whole; one file per session keeps parallel sessions from
 // overwriting each other's lines. Merge ~/.claude/usage-log/*.jsonl by "t".
-let lastLogged = ''
 async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: number, event: string) {
   try {
-    const key = limits.map(l => `${l.kind}:${l.percentUsed}`).join('|')
-    if (key === lastLogged) return
-    lastLogged = key
     const home = (await $.env.get('HOME')) ?? ''
     if (!home) return
     const session = await $.session.id()
