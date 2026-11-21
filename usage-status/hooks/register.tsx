@@ -5,6 +5,14 @@ import type { Sample } from '../types'
 
 const limitsAtom = atom({ plugin: 'usage-status', key: 'limits' } as const, [])
 const historyAtom = atom({ plugin: 'usage-status', key: 'history' } as const, {})
+const toolMsAtom = atom({ plugin: 'usage-status', key: 'toolMs' } as const, 0)
+
+// Tool calls of the main loop still waiting for their result, and since when
+// at least one has been. Subagent rows and the Agent tool itself are left out:
+// while a subagent works, the model is still spending.
+const pendingTools = new Set<string>()
+let toolsSince: number | null = null
+const AGENT_TOOLS = new Set(['Agent', 'Task'])
 
 const LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'week' }
 const ACCENTS: Record<string, string> = { five_hour: 'claude', seven_day: 'permission' }
@@ -33,6 +41,7 @@ type Config = {
   used: string
   left: string
   minSpanMs: number
+  excludeTools: boolean
 }
 
 const resolveColor = (c: string) => NAMED[c.toLowerCase()] ?? c
@@ -66,6 +75,7 @@ function readConfig(options: PluginOptions): Config {
     used: chars[0] ?? '█',
     left: chars[1] ?? '░',
     minSpanMs: Math.max(0, num('rateMinMinutes', 15)) * 60 * 1000,
+    excludeTools: options.rateExcludeTools === true,
   }
 }
 
@@ -110,21 +120,24 @@ function nextHistory(
   history: Record<string, Sample[]>,
   limits: SessionRateLimit[],
   now: number,
+  x: number,
 ): Record<string, Sample[]> {
   const out = { ...history }
   for (const l of limits) {
-    out[l.kind] = [...(out[l.kind] ?? []), { t: now, pct: l.percentUsed }].slice(-MAX_SAMPLES)
+    out[l.kind] = [...(out[l.kind] ?? []), { t: now, pct: l.percentUsed, x }].slice(-MAX_SAMPLES)
   }
   return out
 }
 
 // Mean points per hour since the session's first reading. A drop between two
 // readings is a window reset, counted as climbing from 0 to the new value.
-function sessionRate(samples: Sample[] | undefined, minSpanMs: number): number | null {
+// With excludeTools, time spent waiting on tool calls leaves the span.
+function sessionRate(samples: Sample[] | undefined, minSpanMs: number, excludeTools: boolean): number | null {
   const first = samples?.[0]
   const last = samples?.[samples.length - 1]
   if (!samples || !first || !last) return null
-  const span = last.t - first.t
+  const toolSpan = excludeTools ? (last.x ?? 0) - (first.x ?? 0) : 0
+  const span = last.t - first.t - Math.max(0, toolSpan)
   if (span <= 0 || span < minSpanMs) return null
   let points = 0
   samples.reduce((prev, cur) => {
@@ -176,7 +189,8 @@ async function record($: EngineInterface, limits: SessionRateLimit[], event: str
   const now = await $.clock.now()
   await logReadings($, limits, now, event)
   await update($, limitsAtom, () => limits)
-  await update($, historyAtom, history => nextHistory(history, limits, now))
+  const x = (await read($, toolMsAtom)) + (toolsSince === null ? 0 : now - toolsSince)
+  await update($, historyAtom, history => nextHistory(history, limits, now, x))
 }
 
 export const register: Register = (on, options) => {
@@ -188,6 +202,31 @@ export const register: Register = (on, options) => {
     await record($, (await $.session.usage()).rateLimits, 'session.start')
     return ran
   })
+
+  // Watches the main loop's rows, changing nothing: a tool_use opens a wait, its
+  // tool_result closes it. session.append rather than tool.call, which would
+  // turn off backgrounding and live output for every tool it matched.
+  if (cfg.excludeTools) {
+    on('session.append', async ($, e, next) => {
+      const ran = await next(e)
+      if (e.agentId) return ran
+      const blocks = Array.isArray(e.message.content) ? e.message.content : []
+      const now = await $.clock.now()
+      for (const b of blocks as { type?: string; id?: string; name?: string; tool_use_id?: string }[]) {
+        if (b.type === 'tool_use' && b.id && !AGENT_TOOLS.has(b.name ?? '')) {
+          if (pendingTools.size === 0) toolsSince = now
+          pendingTools.add(b.id)
+        } else if (b.type === 'tool_result' && b.tool_use_id && pendingTools.delete(b.tool_use_id)) {
+          if (pendingTools.size === 0 && toolsSince !== null) {
+            const spent = now - toolsSince
+            toolsSince = null
+            await update($, toolMsAtom, ms => (ms ?? 0) + spent)
+          }
+        }
+      }
+      return ran
+    })
+  }
 
   on('session.measure', async ($, e, next) => {
     await record($, e.rateLimits, 'session.measure')
@@ -223,7 +262,7 @@ export const register: Register = (on, options) => {
         {limits.map((l, i) => {
           const filled = Math.min(cfg.cells, Math.max(0, Math.round((l.percentUsed / 100) * cfg.cells)))
           const color = colorAt(cfg.barStops, l.percentUsed, cfg.blend)
-          const rate = sessionRate(history[l.kind], cfg.minSpanMs)
+          const rate = sessionRate(history[l.kind], cfg.minSpanMs, cfg.excludeTools)
           const ratio = rate === null ? null : paceRatio(rate, l, now)
           const rateColor = colorAt(cfg.rateStops, ratio ?? 0, cfg.blend)
           return (
