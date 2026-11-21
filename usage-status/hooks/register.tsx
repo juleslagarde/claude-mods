@@ -144,9 +144,33 @@ function paceRatio(rate: number, l: SessionRateLimit, now: number): number | nul
   return optimal > 0 ? (rate / optimal) * 100 : Number.POSITIVE_INFINITY
 }
 
+// Append-only log of every change in a window's percent, for offline analysis
+// (e.g. how many weekly points one full 5h window costs). $.fs has no append,
+// so the file is rewritten whole; concurrent sessions may rarely drop a line.
+let lastLogged = ''
+async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: number) {
+  try {
+    const key = limits.map(l => `${l.kind}:${l.percentUsed}`).join('|')
+    if (key === lastLogged) return
+    lastLogged = key
+    const home = (await $.env.get('HOME')) ?? ''
+    if (!home) return
+    const path = `${home}/.claude/usage-log.jsonl`
+    const old = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
+    const row = JSON.stringify({
+      t: new Date(now).toISOString(),
+      limits: limits.map(l => ({ kind: l.kind, pct: l.percentUsed, resetsAt: l.resetsAt })),
+    })
+    await $.fs.write(path, `${old}${row}\n`)
+  } catch {
+    // logging must never break the status line
+  }
+}
+
 async function record($: EngineInterface, limits: SessionRateLimit[]) {
   if (!limits.length) return
   const now = await $.clock.now()
+  await logReadings($, limits, now)
   await update($, limitsAtom, () => limits)
   await update($, historyAtom, history => nextHistory(history, limits, now))
 }
@@ -173,17 +197,25 @@ export const register: Register = (on, options) => {
     const history = await read($, historyAtom)
     const now = await $.clock.now()
     const { Box, Text } = $.ui.resolve(e)
+    // Other mods' bands share the row on the left while there is room; the
+    // row wraps them onto their own line when there is not.
+    const below = await next(e)
 
     if (!limits.length) {
       return (
-        <Box justifyContent="flex-end">
-          <Text dimColor>usage: waiting for first response</Text>
+        <Box flexWrap="wrap" justifyContent="space-between" columnGap={2}>
+          {below}
+          <Box flexGrow={1} justifyContent="flex-end">
+            <Text dimColor>usage: waiting for first response</Text>
+          </Box>
         </Box>
       )
     }
 
     return (
-      <Box justifyContent="flex-end">
+      <Box flexWrap="wrap" justifyContent="space-between" columnGap={2}>
+        {below}
+        <Box flexGrow={1} justifyContent="flex-end">
         {limits.map((l, i) => {
           const filled = Math.min(cfg.cells, Math.max(0, Math.round((l.percentUsed / 100) * cfg.cells)))
           const color = colorAt(cfg.barStops, l.percentUsed, cfg.blend)
@@ -203,6 +235,7 @@ export const register: Register = (on, options) => {
             </Text>
           )
         })}
+        </Box>
       </Box>
     )
   })
