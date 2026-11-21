@@ -41,7 +41,6 @@ type Config = {
   used: string
   left: string
   minSpanMs: number
-  excludeTools: boolean
 }
 
 const resolveColor = (c: string) => NAMED[c.toLowerCase()] ?? c
@@ -75,7 +74,6 @@ function readConfig(options: PluginOptions): Config {
     used: chars[0] ?? '█',
     left: chars[1] ?? '░',
     minSpanMs: Math.max(0, num('rateMinMinutes', 15)) * 60 * 1000,
-    excludeTools: options.rateExcludeTools === true,
   }
 }
 
@@ -120,24 +118,21 @@ function nextHistory(
   history: Record<string, Sample[]>,
   limits: SessionRateLimit[],
   now: number,
-  x: number,
 ): Record<string, Sample[]> {
   const out = { ...history }
   for (const l of limits) {
-    out[l.kind] = [...(out[l.kind] ?? []), { t: now, pct: l.percentUsed, x }].slice(-MAX_SAMPLES)
+    out[l.kind] = [...(out[l.kind] ?? []), { t: now, pct: l.percentUsed }].slice(-MAX_SAMPLES)
   }
   return out
 }
 
 // Mean points per hour since the session's first reading. A drop between two
 // readings is a window reset, counted as climbing from 0 to the new value.
-// With excludeTools, time spent waiting on tool calls leaves the span.
-function sessionRate(samples: Sample[] | undefined, minSpanMs: number, excludeTools: boolean): number | null {
+function sessionRate(samples: Sample[] | undefined, minSpanMs: number): number | null {
   const first = samples?.[0]
   const last = samples?.[samples.length - 1]
   if (!samples || !first || !last) return null
-  const toolSpan = excludeTools ? (last.x ?? 0) - (first.x ?? 0) : 0
-  const span = last.t - first.t - Math.max(0, toolSpan)
+  const span = last.t - first.t
   if (span <= 0 || span < minSpanMs) return null
   let points = 0
   samples.reduce((prev, cur) => {
@@ -172,10 +167,12 @@ async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: 
     const session = await $.session.id()
     const path = `${home}/.claude/usage-log/${session}.jsonl`
     const old = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
+    const toolMs = (await read($, toolMsAtom)) + (toolsSince === null ? 0 : now - toolsSince)
     const row = JSON.stringify({
       t: new Date(now).toISOString(),
       session,
       event,
+      toolMs,
       limits: limits.map(l => ({ kind: l.kind, pct: l.percentUsed, resetsAt: l.resetsAt })),
     })
     await $.fs.write(path, `${old}${row}\n`)
@@ -189,8 +186,7 @@ async function record($: EngineInterface, limits: SessionRateLimit[], event: str
   const now = await $.clock.now()
   await logReadings($, limits, now, event)
   await update($, limitsAtom, () => limits)
-  const x = (await read($, toolMsAtom)) + (toolsSince === null ? 0 : now - toolsSince)
-  await update($, historyAtom, history => nextHistory(history, limits, now, x))
+  await update($, historyAtom, history => nextHistory(history, limits, now))
 }
 
 export const register: Register = (on, options) => {
@@ -206,7 +202,7 @@ export const register: Register = (on, options) => {
   // Watches the main loop's rows, changing nothing: a tool_use opens a wait, its
   // tool_result closes it. session.append rather than tool.call, which would
   // turn off backgrounding and live output for every tool it matched.
-  if (cfg.excludeTools) {
+  {
     on('session.append', async ($, e, next) => {
       const ran = await next(e)
       if (e.agentId) return ran
@@ -262,7 +258,7 @@ export const register: Register = (on, options) => {
         {limits.map((l, i) => {
           const filled = Math.min(cfg.cells, Math.max(0, Math.round((l.percentUsed / 100) * cfg.cells)))
           const color = colorAt(cfg.barStops, l.percentUsed, cfg.blend)
-          const rate = sessionRate(history[l.kind], cfg.minSpanMs, cfg.excludeTools)
+          const rate = sessionRate(history[l.kind], cfg.minSpanMs)
           const ratio = rate === null ? null : paceRatio(rate, l, now)
           const rateColor = colorAt(cfg.rateStops, ratio ?? 0, cfg.blend)
           return (
