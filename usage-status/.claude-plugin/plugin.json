@@ -1,6 +1,6 @@
 {
   "name": "usage-status",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Shows the 5h and weekly Claude usage windows as progress bars, and their hourly rate, above the prompt",
   "types": "./types/index.d.ts",
   "userConfig": {

@@ -144,9 +144,10 @@ function paceRatio(rate: number, l: SessionRateLimit, now: number): number | nul
   return optimal > 0 ? (rate / optimal) * 100 : Number.POSITIVE_INFINITY
 }
 
-// Append-only log of every change in a window's percent, for offline analysis
-// (e.g. how many weekly points one full 5h window costs). $.fs has no append,
-// so the file is rewritten whole; concurrent sessions may rarely drop a line.
+// Log of every change in a window's percent, for offline analysis (e.g. how
+// many weekly points one full 5h window costs). $.fs has no append, so a file
+// is rewritten whole; one file per session keeps parallel sessions from
+// overwriting each other's lines. Merge ~/.claude/usage-log/*.jsonl by "t".
 let lastLogged = ''
 async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: number, event: string) {
   try {
@@ -155,10 +156,12 @@ async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: 
     lastLogged = key
     const home = (await $.env.get('HOME')) ?? ''
     if (!home) return
-    const path = `${home}/.claude/usage-log.jsonl`
+    const session = (await $.env.get('CLAUDE_CODE_SESSION_ID')) ?? 'unknown'
+    const path = `${home}/.claude/usage-log/${session}.jsonl`
     const old = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
     const row = JSON.stringify({
       t: new Date(now).toISOString(),
+      session,
       event,
       limits: limits.map(l => ({ kind: l.kind, pct: l.percentUsed, resetsAt: l.resetsAt })),
     })
