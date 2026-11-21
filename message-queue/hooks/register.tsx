@@ -278,15 +278,19 @@ export const register: Register = (on, options) => {
 
       const { Box, Button, Text } = $.ui.resolve(e)
       const head = `☰ ${list.length} queued`
-      const room = e.props.bodyColumns - head.length - 12
+      // Kept short so other mods' bands fit beside it on the same row.
+      const room = Math.min(30, e.props.bodyColumns - head.length - 12)
+      const below = await next(e)
 
+      // One row that wraps: what other mods and the engine draw goes on the
+      // right while there is room, else on the next line.
       return (
-        <Box flexDirection="column">
-          {await next(e)}
+        <Box flexWrap="wrap" columnGap={2}>
           <Button key="open-queue" plain onPress={() => { void togglePane($) }}>
             <Text color="suggestion">{head}</Text>
             <Text dimColor>{room > 12 ? ` · next: ${preview(list[0]!.text, room)}` : ''}</Text>
           </Button>
+          <Box flexGrow={1} justifyContent="flex-end">{below}</Box>
         </Box>
       )
     })
