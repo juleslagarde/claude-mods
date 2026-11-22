@@ -11,6 +11,8 @@ declare module 'claude-code' {
       history: Record<string, Sample[]>
       /** Cumulative ms the main loop spent with a tool call running. */
       toolMs: number
+      /** Cumulative ms between the main loop's turns (waiting on the person). */
+      idleMs: number
     }
   }
 }

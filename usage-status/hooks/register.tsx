@@ -6,6 +6,11 @@ import type { Sample } from '../types'
 const limitsAtom = atom({ plugin: 'usage-status', key: 'limits' } as const, [])
 const historyAtom = atom({ plugin: 'usage-status', key: 'history' } as const, {})
 const toolMsAtom = atom({ plugin: 'usage-status', key: 'toolMs' } as const, 0)
+const idleMsAtom = atom({ plugin: 'usage-status', key: 'idleMs' } as const, 0)
+
+// When the main loop's last turn ended, while no new one has started: the
+// time between is waiting on the person (or on nothing at all).
+let idleSince: number | null = null
 
 // Tool calls of the main loop still waiting for their result, and since when
 // at least one has been. Subagent rows and the Agent tool itself are left out:
@@ -164,11 +169,13 @@ async function logReadings($: EngineInterface, limits: SessionRateLimit[], now: 
     const path = `${home}/.claude/usage-log/${session}.jsonl`
     const old = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
     const toolMs = (await read($, toolMsAtom)) + (toolsSince === null ? 0 : now - toolsSince)
+    const idleMs = (await read($, idleMsAtom)) + (idleSince === null ? 0 : now - idleSince)
     const row = JSON.stringify({
       t: new Date(now).toISOString(),
       session,
       event,
       toolMs,
+      idleMs,
       limits: limits.map(l => ({ kind: l.kind, pct: l.percentUsed, resetsAt: l.resetsAt })),
     })
     await $.fs.write(path, `${old}${row}\n`)
@@ -219,6 +226,22 @@ export const register: Register = (on, options) => {
       return ran
     })
   }
+
+  // Main-loop turns only, observed: idle runs from a turn's end to the next start.
+  on('turn.complete', async ($, e, next) => {
+    const ran = await next(e)
+    if (!e.agentId) idleSince = await $.clock.now()
+    return ran
+  })
+
+  on('turn.start', async ($, e, next) => {
+    if (!e.agentId && idleSince !== null) {
+      const spent = (await $.clock.now()) - idleSince
+      idleSince = null
+      await update($, idleMsAtom, ms => (ms ?? 0) + spent)
+    }
+    return next(e)
+  })
 
   on('session.measure', async ($, e, next) => {
     await record($, e.rateLimits, 'session.measure')
